@@ -1,0 +1,21 @@
+{
+  "name": "@000alen/alameda",
+  "description": "AMD loader, like requirejs, but with promises and for modern browsers",
+  "version": "1.4.3",
+  "homepage": "https://github.com/000alen/alameda",
+  "author": "Alen Rubilar <lclc.alen@gmail.com> (https://github.com/000alen)",
+  "license": "MIT",
+  "scripts": {
+    "build": "tsc",
+    "deploy": "gitpkg publish"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/000alen/alameda.git"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "devDependencies": {
+    "typescript": "^5.5.4"
+  }
+}

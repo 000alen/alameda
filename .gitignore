@@ -4,3 +4,4 @@ copy-to-prim.sh
 require.js
 testBaseUrl.js
 tests-requirejs
+node_modules

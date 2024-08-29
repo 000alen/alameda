@@ -6,6 +6,7 @@
 /*jslint sloppy: true, nomen: true, regexp: true */
 /*global document, navigator, importScripts, Promise, setTimeout */
 
+import { TopReq, Config, Req, Handlers } from "./types";
 import {
   commentReplace,
   hasProp,
@@ -17,57 +18,6 @@ import {
   trimDots,
 } from "./utils";
 
-interface Config {
-  waitSeconds: number;
-  baseUrl: string;
-  paths: Record<string, string>;
-  bundles: Record<string, string>;
-  pkgs: Record<string, string>;
-  shim: Record<string, any>;
-  config: Record<string, any>;
-
-  map?: Record<string, any>;
-
-  nodeIdCompat?: boolean;
-
-  urlArgs?: (moduleName: string, url: string) => string;
-
-  scriptType?: string;
-
-  onNodeCreated?: (
-    script: HTMLScriptElement,
-    config: Config,
-    id: string,
-    url: string
-  ) => void;
-
-  defaultErrback?: (err: Error) => void;
-
-  skipDataMain?: boolean;
-}
-
-interface Handlers {
-  require: (name: string) => any;
-  exports: (name: string) => any;
-  module: (name: string, url: string) => any;
-}
-
-type Req = CallableFunction & {
-  isBrowser: boolean;
-  nameToUrl: (moduleName: string, ext: string, skipExt: boolean) => string;
-  toUrl: (moduleNamePlusExt: string) => string;
-  defined(id: string): boolean;
-  specified(id: string): boolean;
-  exec(text: string): any;
-  onError(err: Error): void;
-  config: Config;
-};
-
-type TopReq = Req & {
-  contexts: Record<string, Req>;
-  config: (config: Partial<Config>) => void;
-};
-
 const GLOBAL = this;
 
 const UNDEFINED = undefined;
@@ -77,23 +27,19 @@ const ASAP = Promise.resolve(undefined);
 var requirejs, require, define;
 
 var topReq: TopReq,
-  dataMain,
-  src,
-  subPath,
   bootstrapConfig: Config | undefined = requirejs || require,
   contexts: Record<string, Req> = {},
-  queue: string[] = [],
+  queue: string[][] = [],
   currDirRegExp = /^\.\//,
   urlRegExp = /^\/|\:|\?|\.js$/,
   commentRegExp = /\/\*[\s\S]*?\*\/|([^:"'=]|^)\/\/.*$/gm,
   cjsRequireRegExp = /[^.]\s*require\s*\(\s*["']([^'"\s]+)["']\s*\)/g,
-  jsSuffixRegExp = /\.js$/,
-  slice = Array.prototype.slice;
+  jsSuffixRegExp = /\.js$/;
 
 function newContext(contextName: string): TopReq {
   var req: Req,
-    main,
-    makeMap,
+    main: (...args: any[]) => any,
+    makeMap: (...args: any[]) => any,
     callDep,
     handlers: Handlers,
     checkingLater,
@@ -137,9 +83,9 @@ function newContext(contextName: string): TopReq {
    * @returns {String} normalized name
    */
   function normalize(
-    name: string,
+    name: string | string[],
     baseName: string,
-    applyMap: boolean
+    applyMap?: boolean
   ): string {
     var pkgMain,
       mapValue,
@@ -159,6 +105,8 @@ function newContext(contextName: string): TopReq {
 
     //Adjust any relative paths.
     if (name) {
+      if (typeof name !== "string") throw new Error("unreachable");
+
       name = name.split("/");
       lastIndex = name.length - 1;
 
@@ -227,6 +175,8 @@ function newContext(contextName: string): TopReq {
       }
 
       if (foundMap) {
+        if (foundI === undefined) throw new Error("unreachable");
+
         nameParts.splice(0, foundI, foundMap);
         name = nameParts.join("/");
       }
@@ -239,18 +189,18 @@ function newContext(contextName: string): TopReq {
     return pkgMain ? pkgMain : name;
   }
 
-  function makeShimExports(value) {
+  function makeShimExports(value: { init: () => any; exports: string }) {
     function fn() {
       var ret;
       if (value.init) {
-        ret = value.init.apply(GLOBAL, arguments);
+        ret = value.init.apply(GLOBAL, arguments as any);
       }
       return ret || (value.exports && getGlobal(value.exports));
     }
     return fn;
   }
 
-  function takeQueue(anonId: string) {
+  function takeQueue(anonId?: string) {
     var i, id, args, shim;
     for (i = 0; i < queue.length; i += 1) {
       // Peek to see if anon
@@ -264,12 +214,15 @@ function newContext(contextName: string): TopReq {
         }
       }
       args = queue.shift();
+
+      if (args === undefined) throw new Error("unreachable");
+
       id = args[0];
       i -= 1;
 
       if (!(id in defined) && !(id in waiting)) {
         if (id in deferreds) {
-          main.apply(UNDEFINED, args);
+          main.apply(UNDEFINED, args as any);
         } else {
           waiting[id] = args;
         }
@@ -284,8 +237,13 @@ function newContext(contextName: string): TopReq {
     }
   }
 
-  function makeRequire(relName: string, topLevel) {
-    var req: Req = function (deps, callback, errback, alt) {
+  function makeRequire(relName: string | null, topLevel?: TopReq) {
+    var req: Req = function (
+      deps: string | string[] | null | undefined,
+      callback,
+      errback,
+      alt
+    ) {
       var name, cfg;
 
       if (topLevel) {
@@ -330,7 +288,8 @@ function newContext(contextName: string): TopReq {
         function () {
           // In case used later as a promise then value, return the
           // arguments as an array.
-          return slice.call(arguments, 0);
+          // return slice.call(arguments, 0);
+          return [...arguments].slice(0);
         };
 
       // Complete async to maintain expected execution semantics.
@@ -994,7 +953,13 @@ function newContext(contextName: string): TopReq {
     return e;
   }
 
-  main = function (name: string, deps: string[], factory, errback, relName) {
+  main = function (
+    name: string,
+    deps: string[] | null,
+    factory,
+    errback,
+    relName
+  ) {
     if (name) {
       // Only allow main calling once per module.
       if (name in calledDefine) {
@@ -1015,7 +980,8 @@ function newContext(contextName: string): TopReq {
     }
 
     // Create fresh array instead of modifying passed in value.
-    deps = deps ? slice.call(deps, 0) : null;
+    // deps = deps ? slice.call(deps, 0) : null;
+    deps = deps ? deps.slice(0) : null;
 
     if (!errback) {
       if (hasProp(config, "defaultErrback")) {
@@ -1036,6 +1002,8 @@ function newContext(contextName: string): TopReq {
 
     // Call the factory to define the module, if necessary.
     if (typeof factory === "function") {
+      if (deps === null) throw new Error("unreachable");
+
       if (!deps.length && factory.length) {
         // Remove comments from the callback string,
         // look for require calls, and pull them into the dependencies,
@@ -1044,6 +1012,8 @@ function newContext(contextName: string): TopReq {
           .toString()
           .replace(commentRegExp, commentReplace)
           .replace(cjsRequireRegExp, function (match: string, dep: string) {
+            if (deps === null) throw new Error("unreachable");
+
             deps.push(dep);
           });
 
@@ -1266,44 +1236,12 @@ topReq.exec = function (text: string) {
 topReq.contexts = contexts;
 
 define = function () {
-  queue.push(slice.call(arguments, 0));
-};
-
-define.amd = {
-  jQuery: true,
+  // queue.push(slice.call(arguments, 0));
+  queue.push([...arguments].slice(0));
 };
 
 if (bootstrapConfig) {
   topReq.config(bootstrapConfig);
-}
-
-// data-main support.
-if (topReq.isBrowser && !contexts._.config.skipDataMain) {
-  dataMain = document.querySelectorAll("script[data-main]")[0];
-  dataMain = dataMain && dataMain.getAttribute("data-main");
-  if (dataMain) {
-    // Strip off any trailing .js since dataMain is now
-    // like a module name.
-    dataMain = dataMain.replace(jsSuffixRegExp, "");
-
-    // Set final baseUrl if there is not already an explicit one,
-    // but only do so if the data-main value is not a loader plugin
-    // module ID.
-    if (
-      (!bootstrapConfig || !bootstrapConfig.baseUrl) &&
-      dataMain.indexOf("!") === -1
-    ) {
-      // Pull off the directory of data-main for use as the
-      // baseUrl.
-      src = dataMain.split("/");
-      dataMain = src.pop();
-      subPath = src.length ? src.join("/") + "/" : "./";
-
-      topReq.config({ baseUrl: subPath });
-    }
-
-    topReq([dataMain]);
-  }
 }
 
 export default requirejs;

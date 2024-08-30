@@ -243,8 +243,8 @@ function newContext(contextName: string): Require {
     }
   }
 
-  function makeRequire(relName?: string, topLevel?: boolean) {
-    var req: Require = function (
+  function makeRequire(relName?: string, topLevel?: boolean): Require {
+    const req: Partial<Require> = function (
       deps: string | string[] | null | undefined,
       callback?: () => any,
       errback?: ((err: Error) => any) | (() => any),
@@ -327,7 +327,7 @@ function newContext(contextName: string): Require {
       bundleId = getOwn<string>(bundlesMap, moduleName);
 
       if (bundleId) {
-        return req.nameToUrl(bundleId, ext, skipExt);
+        return req.nameToUrl!(bundleId, ext, skipExt);
       }
 
       // If a colon is in the URL, it indicates a protocol is used and it is
@@ -396,7 +396,7 @@ function newContext(contextName: string): Require {
         moduleNamePlusExt = moduleNamePlusExt.substring(0, index);
       }
 
-      return req.nameToUrl(normalize(moduleNamePlusExt, relName), ext, true);
+      return req.nameToUrl!(normalize(moduleNamePlusExt, relName), ext, true);
     };
 
     req.defined = function (id) {
@@ -408,7 +408,7 @@ function newContext(contextName: string): Require {
       return id in defined || id in deferreds;
     };
 
-    return req;
+    return req as Require;
   }
 
   function resolve(name: string, d: Defer, value: any) {
@@ -478,7 +478,11 @@ function newContext(contextName: string): Require {
         reject(err);
       };
     });
-    d.map = name ? calculatedMap || makeMap(name) : {};
+
+    // d.map = name ? calculatedMap || makeMap(name) : {};
+    if (name) d.map = calculatedMap || makeMap(name);
+    else d.map = {} as DepMap;
+
     d.depCount = 0;
     d.depMax = 0;
     d.values = [];
@@ -538,7 +542,12 @@ function newContext(contextName: string): Require {
     };
   }
 
-  function waitForDep(depMap: DepMap, relName: string, d: Defer, i: number) {
+  function waitForDep(
+    depMap: DepMap,
+    relName: string | undefined,
+    d: Defer,
+    i: number
+  ) {
     d.depMax += 1;
 
     // Do the fail at the end to catch errors
@@ -596,7 +605,9 @@ function newContext(contextName: string): Require {
       try {
         newRequire.exec(text);
       } catch (e) {
-        execError = new Error("fromText eval for " + plainId + " failed: " + e);
+        execError = new AlamedaError(
+          "fromText eval for " + plainId + " failed: " + e
+        );
         execError.requireType = "fromtexteval";
         reject(d, execError);
       }
@@ -607,7 +618,7 @@ function newContext(contextName: string): Require {
       // Mark this as a dependency for the plugin
       // resource
       d.deps = [map];
-      waitForDep(map, null, d, d.deps.length);
+      waitForDep(map, undefined, d, d.deps.length);
     };
 
     return load;
@@ -692,7 +703,7 @@ function newContext(contextName: string): Require {
       // If the script is cached, IE10 executes the script body and the
       // onload handler synchronously here.  That's a spec violation,
       // so be sure to do this asynchronously.
-      if (document.documentMode === 10) {
+      if ((document as { documentMode?: number }).documentMode === 10) {
         ASAP.then(function () {
           document.head.appendChild(script);
         });
@@ -1099,7 +1110,7 @@ function newContext(contextName: string): Require {
     return d.promise;
   };
 
-  newRequire = makeRequire(null, true);
+  newRequire = makeRequire(undefined, true);
 
   /*
    * Just drops the config on the floor, but returns req in case

@@ -7,11 +7,14 @@ export function commentReplace(_match: string, singlePrefix: string) {
   return singlePrefix || "";
 }
 
-export function hasProp(obj: object, prop: PropertyKey) {
+export function hasProp<T = any>(obj: T, prop: keyof T): boolean {
   return hasOwn.call(obj, prop);
 }
 
-export function getOwn<T = any>(obj: object, prop: PropertyKey): T | false {
+export function getOwn<T = any>(
+  obj: Record<string, any>,
+  prop: string
+): T | false {
   return obj && hasProp(obj, prop) && (obj[prop] as T);
 }
 
@@ -24,9 +27,9 @@ export function obj() {
  * property value. If the function returns a truthy value, then the
  * iteration is stopped.
  */
-export function eachProp<T extends object>(
-  obj: T,
-  func: (value: any, prop: keyof T) => boolean | void
+export function eachProp(
+  obj: Record<string, any>,
+  func: (value: any, prop: string) => boolean | void
 ) {
   var prop;
   for (prop in obj) {
@@ -42,7 +45,12 @@ export function eachProp<T extends object>(
  * Simple function to mix in properties from source into target,
  * but only if target does not already have a property of the same name.
  */
-export function mixin(target, source, force, deepStringMixin) {
+export function mixin(
+  target: Record<string, any>,
+  source: Record<string, any>,
+  force: boolean,
+  deepStringMixin: boolean
+) {
   if (source) {
     eachProp(source, function (value, prop) {
       if (force || !hasProp(target, prop)) {

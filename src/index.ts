@@ -3,7 +3,16 @@
  * Released under MIT license, https://github.com/requirejs/alameda/blob/master/LICENSE
  */
 
-import { Config, Require, Handlers, Defer, DepMap } from "./types";
+import {
+  Config,
+  Require,
+  Handlers,
+  Defer,
+  DepMap,
+  Plugin,
+  Load,
+  AlamedaError,
+} from "./types";
 import {
   commentReplace,
   hasProp,
@@ -457,19 +466,6 @@ function newContext(contextName: string): Require {
     resolve(name, d, ret);
   }
 
-  // This method is attached to every module deferred,
-  // so the "this" in here is the module deferred object.
-  function depFinished(val: any, i: number) {
-    if (!this.rejected && !this.depDefined[i]) {
-      this.depDefined[i] = true;
-      this.depCount += 1;
-      this.values[i] = val;
-      if (!this.depending && this.depCount === this.depMax) {
-        defineModule(this);
-      }
-    }
-  }
-
   function makeDefer(name?: string, calculatedMap?) {
     const d: Defer = {} as any;
 
@@ -487,7 +483,20 @@ function newContext(contextName: string): Require {
     d.depMax = 0;
     d.values = [];
     d.depDefined = [];
-    d.depFinished = depFinished;
+    // d.depFinished = depFinished;
+
+    // This method is attached to every module deferred,
+    // so the "this" in here is the module deferred object.
+    d.depFinished = function depFinished(val: any, i: number) {
+      if (!this.rejected && !this.depDefined[i]) {
+        this.depDefined[i] = true;
+        this.depCount += 1;
+        this.values[i] = val;
+        if (!this.depending && this.depCount === this.depMax) {
+          defineModule(this);
+        }
+      }
+    };
 
     if (d.map.pr) {
       // Plugin resource ID, implicitly
@@ -518,7 +527,7 @@ function newContext(contextName: string): Require {
   }
 
   function makeErrback(d: Defer, name: string) {
-    return function (err: Error) {
+    return function (err: AlamedaError) {
       if (!d.rejected) {
         if (!err.dynaId) {
           err.dynaId = "id" + (errCount += 1);
@@ -541,9 +550,10 @@ function newContext(contextName: string): Require {
       .catch(makeErrback(d, d.map.id));
   }
 
-  function makeLoad(id: string) {
-    var fromTextCalled;
-    function load(value) {
+  function makeLoad(id: string): Load {
+    let fromTextCalled: boolean;
+
+    function load(value: any) {
       // Protect against older plugins that call load after
       // calling load.fromText
       if (!fromTextCalled) {
@@ -652,7 +662,7 @@ function newContext(contextName: string): Require {
             Array.isArray(pathConfig) &&
             pathConfig.length > 1
           ) {
-            script.parentNode.removeChild(script);
+            script.parentNode!.removeChild(script);
             // Pop off the first array value, since it failed, and
             // retry
             pathConfig.shift();
@@ -663,7 +673,7 @@ function newContext(contextName: string): Require {
             d.map.url = newRequire.nameToUrl(id);
             load(d.map);
           } else {
-            err = new Error("Load failed: " + id + ": " + script.src);
+            err = new AlamedaError("Load failed: " + id + ": " + script.src);
             err.requireModules = [id];
             err.requireType = "scripterror";
             reject(getDefer(id), err);
@@ -691,7 +701,7 @@ function newContext(contextName: string): Require {
     }
   }
 
-  function callPlugin(plugin, map, relName) {
+  function callPlugin(plugin: Plugin, map, relName: string) {
     plugin.load(map.n, makeRequire(relName), makeLoad(map.id), config);
   }
 
@@ -713,7 +723,7 @@ function newContext(contextName: string): Require {
           map.url = newRequire.nameToUrl(bundleId);
           load(map);
         } else {
-          return callDep(makeMap(map.pr)).then(function (plugin) {
+          return callDep(makeMap(map.pr)).then(function (plugin: Plugin) {
             // Redo map now that plugin is known to be loaded
             var newMap = map.prn ? map : makeMap(name, relName, true),
               newId = newMap.id,
@@ -926,7 +936,7 @@ function newContext(contextName: string): Require {
           notFinished.push(dfd.map.id);
         }
       }
-      const err = new Error("Timeout for modules: " + notFinished);
+      const err = new AlamedaError("Timeout for modules: " + notFinished);
       err.requireModules = notFinished;
       err.requireType = "timeout";
       notFinished.forEach(function (id) {
@@ -951,9 +961,11 @@ function newContext(contextName: string): Require {
   }
 
   // Used to break out of the promise try/catch chains.
-  function delayedError(e: Error) {
+  function delayedError(e: AlamedaError) {
     setTimeout(function () {
       if (!e.dynaId || !trackedErrors[e.dynaId]) {
+        if (e.dynaId === undefined) throw new Error("unreachable");
+
         trackedErrors[e.dynaId] = true;
         newRequire.onError(e);
       }

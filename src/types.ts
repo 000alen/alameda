@@ -53,6 +53,11 @@ export type Require = CallableFunction & {
   execCb: (name: string, factory: any, values: any, defined: any) => any;
 };
 
+export type Load = ((value: any) => void) & {
+  error: (err: Error) => void;
+  fromText: (text: string, textAlt?: string) => void;
+};
+
 type Main =
   | ((
       name: string,
@@ -92,3 +97,13 @@ export type Defer = {
 
   cjsModule?: any;
 };
+
+export interface Plugin {
+  load: (n: any, require: Require, load: Load, config: Config) => any;
+}
+
+export class AlamedaError extends Error {
+  dynaId?: string;
+  requireModules?: string[];
+  requireType?: string;
+}

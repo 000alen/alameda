@@ -24,9 +24,9 @@ export function obj() {
  * property value. If the function returns a truthy value, then the
  * iteration is stopped.
  */
-export function eachProp(
-  obj: object,
-  func: (value: any, prop: PropertyKey) => boolean
+export function eachProp<T extends object>(
+  obj: T,
+  func: (value: any, prop: keyof T) => boolean | void
 ) {
   var prop;
   for (prop in obj) {

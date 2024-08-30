@@ -38,7 +38,7 @@ const contexts: Record<string, Require> = {};
 const queue: string[][] = [];
 
 function newContext(contextName: string): Require {
-  const config: Partial<Config> = {
+  const config: Config = {
     // Defaults. Do not set a default for map
     // config to speed up normalize(), which
     // will run faster if there is no default.
@@ -51,19 +51,21 @@ function newContext(contextName: string): Require {
     config: {},
   };
 
+  const requireDeferreds: Defer[] = [];
+
+  const defined: Record<string, any> = obj();
+
+  const waiting: Record<string, any[]> = obj();
+
+  const deferreds: Record<string, Defer> = obj();
+
+  let checkingLater: boolean;
+
   var newRequire: Require,
     main: (...args: any[]) => any,
-    makeMap: (...args: any[]) => any,
-    callDep,
     handlers: Handlers,
-    checkingLater,
-    load,
     context: Require,
-    defined: Record<string, any> = obj(),
-    waiting: Record<string, any> = obj(),
     mapCache = obj(),
-    requireDeferreds = [],
-    deferreds: Record<string, any> = obj(),
     calledDefine = obj(),
     calledPlugin = obj(),
     loadCount = 0,
@@ -86,7 +88,7 @@ function newContext(contextName: string): Require {
    */
   function normalize(
     name: string | string[],
-    baseName: string,
+    baseName?: string,
     applyMap?: boolean
   ): string {
     var pkgMain,
@@ -186,6 +188,7 @@ function newContext(contextName: string): Require {
 
     // If the name points to a package's name, use
     // the package main instead.
+    if (config.pkgs === undefined) throw new Error("unreachable");
     pkgMain = getOwn(config.pkgs, name);
 
     return pkgMain ? pkgMain : name;
@@ -225,16 +228,17 @@ function newContext(contextName: string): Require {
     // if get to the end and still have anonId, then could be
     // a shimmed dependency.
     if (anonId) {
+      if (config.shim === undefined) throw new Error("unreachable");
       shim = getOwn(config.shim, anonId) || {};
       main(anonId, shim.deps || [], shim.exportsFn);
     }
   }
 
-  function makeRequire(relName: string | null, topLevel?: boolean) {
+  function makeRequire(relName: string, topLevel?: boolean) {
     var req: Require = function (
       deps: string | string[] | null | undefined,
-      callback,
-      errback,
+      callback: () => any,
+      errback: (err: Error) => any,
       alt
     ) {
       var name, cfg;
@@ -415,7 +419,7 @@ function newContext(contextName: string): Require {
     d.reject(err);
   }
 
-  function makeNormalize(relName: string) {
+  function makeNormalize(relName?: string) {
     return function (name: string) {
       return normalize(name, relName, true);
     };
@@ -499,10 +503,13 @@ function newContext(contextName: string): Require {
     let d: Defer;
 
     if (name) {
-      d = name in deferreds && deferreds[name];
-      if (!d) {
-        d = deferreds[name] = makeDefer(name, calculatedMap);
-      }
+      // d = name in deferreds && deferreds[name];
+      // if (!d) {
+      //   d = deferreds[name] = makeDefer(name, calculatedMap);
+      // }
+
+      if (name in deferreds) d = deferreds[name];
+      else d = deferreds[name] = makeDefer(name, calculatedMap);
     } else {
       d = makeDefer();
       requireDeferreds.push(d);
@@ -522,7 +529,7 @@ function newContext(contextName: string): Require {
     };
   }
 
-  function waitForDep(depMap, relName, d: Defer, i) {
+  function waitForDep(depMap, relName: string, d: Defer, i: number) {
     d.depMax += 1;
 
     // Do the fail at the end to catch errors
@@ -544,7 +551,7 @@ function newContext(contextName: string): Require {
       }
     }
 
-    load.error = function (err) {
+    load.error = function (err: Error) {
       reject(getDefer(id), err);
     };
 
@@ -596,101 +603,99 @@ function newContext(contextName: string): Require {
     return load;
   }
 
-  load =
-    typeof importScripts === "function"
-      ? function (map) {
-          var url = map.url;
-          if (urlFetched[url]) {
-            return;
-          }
-          urlFetched[url] = true;
+  function load(map) {
+    if (typeof importScripts === "function") {
+      var url = map.url;
+      if (urlFetched[url]) {
+        return;
+      }
+      urlFetched[url] = true;
 
-          // Ask for the deferred so loading is triggered.
-          // Do this before loading, since loading is sync.
-          getDefer(map.id);
-          importScripts(url);
-          takeQueue(map.id);
-        }
-      : function (map) {
-          var script,
-            id = map.id,
-            url = map.url;
+      // Ask for the deferred so loading is triggered.
+      // Do this before loading, since loading is sync.
+      getDefer(map.id);
+      importScripts(url);
+      takeQueue(map.id);
+    } else {
+      const id = map.id,
+        url = map.url;
 
-          if (urlFetched[url]) {
-            return;
-          }
-          urlFetched[url] = true;
+      if (urlFetched[url]) {
+        return;
+      }
+      urlFetched[url] = true;
 
-          script = document.createElement("script");
-          script.setAttribute("data-requiremodule", id);
-          script.type = config.scriptType || "text/javascript";
-          script.charset = "utf-8";
-          script.async = true;
+      const script = document.createElement("script");
+      script.setAttribute("data-requiremodule", id);
+      script.type = config.scriptType || "text/javascript";
+      script.charset = "utf-8";
+      script.async = true;
 
-          loadCount += 1;
+      loadCount += 1;
 
-          script.addEventListener(
-            "load",
-            function () {
-              loadCount -= 1;
-              takeQueue(id);
-            },
-            false
-          );
-          script.addEventListener(
-            "error",
-            function () {
-              loadCount -= 1;
-              var err,
-                pathConfig = getOwn(config.paths, id);
-              if (
-                pathConfig &&
-                Array.isArray(pathConfig) &&
-                pathConfig.length > 1
-              ) {
-                script.parentNode.removeChild(script);
-                // Pop off the first array value, since it failed, and
-                // retry
-                pathConfig.shift();
-                var d = getDefer(id);
-                d.map = makeMap(id);
-                // mapCache will have returned previous map value, update the
-                // url, which will also update mapCache value.
-                d.map.url = newRequire.nameToUrl(id);
-                load(d.map);
-              } else {
-                err = new Error("Load failed: " + id + ": " + script.src);
-                err.requireModules = [id];
-                err.requireType = "scripterror";
-                reject(getDefer(id), err);
-              }
-            },
-            false
-          );
-
-          script.src = url;
-
-          if (config.onNodeCreated) {
-            config.onNodeCreated(script, config, id, url);
-          }
-
-          // If the script is cached, IE10 executes the script body and the
-          // onload handler synchronously here.  That's a spec violation,
-          // so be sure to do this asynchronously.
-          if (document.documentMode === 10) {
-            ASAP.then(function () {
-              document.head.appendChild(script);
-            });
+      script.addEventListener(
+        "load",
+        function () {
+          loadCount -= 1;
+          takeQueue(id);
+        },
+        false
+      );
+      script.addEventListener(
+        "error",
+        function () {
+          loadCount -= 1;
+          var err,
+            pathConfig = getOwn(config.paths, id);
+          if (
+            pathConfig &&
+            Array.isArray(pathConfig) &&
+            pathConfig.length > 1
+          ) {
+            script.parentNode.removeChild(script);
+            // Pop off the first array value, since it failed, and
+            // retry
+            pathConfig.shift();
+            var d = getDefer(id);
+            d.map = makeMap(id);
+            // mapCache will have returned previous map value, update the
+            // url, which will also update mapCache value.
+            d.map.url = newRequire.nameToUrl(id);
+            load(d.map);
           } else {
-            document.head.appendChild(script);
+            err = new Error("Load failed: " + id + ": " + script.src);
+            err.requireModules = [id];
+            err.requireType = "scripterror";
+            reject(getDefer(id), err);
           }
-        };
+        },
+        false
+      );
+
+      script.src = url;
+
+      if (config.onNodeCreated) {
+        config.onNodeCreated(script, config, id, url);
+      }
+
+      // If the script is cached, IE10 executes the script body and the
+      // onload handler synchronously here.  That's a spec violation,
+      // so be sure to do this asynchronously.
+      if (document.documentMode === 10) {
+        ASAP.then(function () {
+          document.head.appendChild(script);
+        });
+      } else {
+        document.head.appendChild(script);
+      }
+    }
+  }
 
   function callPlugin(plugin, map, relName) {
     plugin.load(map.n, makeRequire(relName), makeLoad(map.id), config);
   }
 
-  callDep = function (map, relName) {
+  function callDep(map, relName?: string) {
     var args,
       bundleId,
       name = map.id,
@@ -739,7 +744,7 @@ function newContext(contextName: string): Require {
     }
 
     return getDefer(name).promise;
-  };
+  }
 
   // Turns a plugin!resource to [plugin, resource]
   // with the plugin being undefined if the name
@@ -759,7 +764,7 @@ function newContext(contextName: string): Require {
    * for normalization if necessary. Grabs a ref to plugin
    * too, as an optimization.
    */
-  makeMap = function (name: string, relName: string, applyMap: boolean) {
+  function makeMap(name: string, relName?: string, applyMap?: boolean) {
     if (typeof name !== "string") {
       return name;
     }
@@ -824,7 +829,7 @@ function newContext(contextName: string): Require {
     }
 
     return result;
-  };
+  }
 
   handlers = {
     require: function (name) {
@@ -885,11 +890,11 @@ function newContext(contextName: string): Require {
     processed[id] = true;
   }
 
-  function check(d: Defer) {
-    var err,
-      mid,
+  function check(d?: Defer) {
+    const notFinished: string[] = [];
+
+    var mid,
       dfd,
-      notFinished = [],
       waitInterval = config.waitSeconds! * 1000,
       // It is possible to disable the wait interval by using waitSeconds 0.
       expired = waitInterval && startTime + waitInterval < new Date().getTime();
@@ -921,7 +926,7 @@ function newContext(contextName: string): Require {
           notFinished.push(dfd.map.id);
         }
       }
-      err = new Error("Timeout for modules: " + notFinished);
+      const err = new Error("Timeout for modules: " + notFinished);
       err.requireModules = notFinished;
       err.requireType = "timeout";
       notFinished.forEach(function (id) {

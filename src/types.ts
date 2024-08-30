@@ -1,5 +1,5 @@
 export interface Config {
-  context: string;
+  context?: string;
 
   waitSeconds: number;
   baseUrl: string;
@@ -48,6 +48,9 @@ export type Require = CallableFunction & {
 
   // config: Config;
   config: (config: Partial<Config>) => Require;
+
+  onResourceLoad?: (context: Require, map: any, deps: any) => any;
+  execCb: (name: string, factory: any, values: any, defined: any) => any;
 };
 
 type Main =

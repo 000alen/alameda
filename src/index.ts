@@ -243,12 +243,12 @@ function newContext(contextName: string): Require {
     }
   }
 
-  function makeRequire(relName: string, topLevel?: boolean) {
+  function makeRequire(relName?: string, topLevel?: boolean) {
     var req: Require = function (
       deps: string | string[] | null | undefined,
-      callback: () => any,
-      errback: (err: Error) => any,
-      alt
+      callback?: () => any,
+      errback?: ((err: Error) => any) | (() => any),
+      alt?: (err: Error) => any
     ) {
       var name, cfg;
 
@@ -278,7 +278,7 @@ function newContext(contextName: string): Require {
           // callback is an array, which means it is a dependency list.
           // Adjust args if there are dependencies
           deps = callback;
-          callback = errback;
+          callback = errback as (() => any) | undefined;
           errback = alt;
         }
 
@@ -466,7 +466,7 @@ function newContext(contextName: string): Require {
     resolve(name, d, ret);
   }
 
-  function makeDefer(name?: string, calculatedMap?) {
+  function makeDefer(name?: string, calculatedMap?: DepMap) {
     const d: Defer = {} as any;
 
     d.promise = new Promise(function (resolve, reject) {
@@ -538,7 +538,7 @@ function newContext(contextName: string): Require {
     };
   }
 
-  function waitForDep(depMap, relName: string, d: Defer, i: number) {
+  function waitForDep(depMap: DepMap, relName: string, d: Defer, i: number) {
     d.depMax += 1;
 
     // Do the fail at the end to catch errors
@@ -613,9 +613,10 @@ function newContext(contextName: string): Require {
     return load;
   }
 
-  function load(map) {
+  function load(map: DepMap) {
     if (typeof importScripts === "function") {
       var url = map.url;
+
       if (urlFetched[url]) {
         return;
       }
@@ -701,11 +702,11 @@ function newContext(contextName: string): Require {
     }
   }
 
-  function callPlugin(plugin: Plugin, map, relName: string) {
+  function callPlugin(plugin: Plugin, map: DepMap, relName?: string) {
     plugin.load(map.n, makeRequire(relName), makeLoad(map.id), config);
   }
 
-  function callDep(map, relName?: string) {
+  function callDep(map: DepMap, relName?: string): Promise<any> {
     var args,
       bundleId,
       name = map.id,
@@ -774,16 +775,17 @@ function newContext(contextName: string): Require {
    * for normalization if necessary. Grabs a ref to plugin
    * too, as an optimization.
    */
-  function makeMap(name: string, relName?: string, applyMap?: boolean) {
+  function makeMap(name: string, relName?: string, applyMap?: boolean): DepMap {
     if (typeof name !== "string") {
       return name;
     }
+
+    let result: DepMap;
 
     var plugin,
       url,
       parts,
       prefix,
-      result,
       prefixNormalized,
       cacheKey = name + " & " + (relName || "") + " & " + !!applyMap;
 
@@ -830,8 +832,8 @@ function newContext(contextName: string): Require {
       id: prefix ? prefix + "!" + name : name, // fullName
       n: name,
       pr: prefix,
-      url: url,
-      prn: prefix && prefixNormalized,
+      url: url!,
+      prn: (prefix && prefixNormalized) as boolean,
     };
 
     if (!prefix) {

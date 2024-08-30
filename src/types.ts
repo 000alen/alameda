@@ -68,6 +68,10 @@ type Main =
 
 export type DepMap = {
   id: string;
+  n: string;
+  url: string;
+  pr?: string;
+  prn?: boolean;
 };
 
 export type Defer = {
@@ -78,7 +82,7 @@ export type Defer = {
   rejected?: boolean;
 
   promise: Promise<any>;
-  map: Record<string, any>;
+  map: DepMap;
   depCount: number;
   depMax: number;
 

@@ -1,4 +1,6 @@
 export interface Config {
+  context: string;
+
   waitSeconds: number;
   baseUrl: string;
   paths: Record<string, string>;
@@ -33,18 +35,57 @@ export type Handlers = {
   module: (name: string, url: string) => any;
 } & Record<string, any>;
 
-export type Req = CallableFunction & {
+export type Require = CallableFunction & {
   isBrowser: boolean;
-  nameToUrl: (moduleName: string, ext: string, skipExt: boolean) => string;
+  nameToUrl: (moduleName: string, ext?: string, skipExt?: boolean) => string;
   toUrl: (moduleNamePlusExt: string) => string;
   defined(id: string): boolean;
   specified(id: string): boolean;
   exec(text: string): any;
   onError(err: Error): void;
-  config: Config;
+
+  contexts?: Record<string, Require>;
+
+  // config: Config;
+  config: (config: Partial<Config>) => Require;
 };
 
-export type TopReq = Req & {
-  contexts: Record<string, Req>;
-  config: (config: Partial<Config>) => void;
+type Main =
+  | ((
+      name: string,
+      dependencies: string[],
+      factory: (...args: any[]) => any
+    ) => void)
+  | ((name: string, factory: any) => void);
+
+export type DepMap = {
+  id: string;
+};
+
+export type Defer = {
+  resolve: (value: any) => void;
+  reject: (error: Error) => void;
+
+  finished?: boolean;
+  rejected?: boolean;
+
+  promise: Promise<any>;
+  map: Record<string, any>;
+  depCount: number;
+  depMax: number;
+
+  values: any[];
+  depDefined: any[];
+  depFinished: (value: any, i: number) => any;
+
+  deps?: DepMap[];
+
+  factory?: any;
+  factoryCalled?: boolean;
+
+  depending?: boolean;
+
+  usingExports?: boolean;
+
+  cjsModule?: any;
 };

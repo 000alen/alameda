@@ -2,11 +2,8 @@
  * @license alameda 1.4.0 Copyright jQuery Foundation and other contributors.
  * Released under MIT license, https://github.com/requirejs/alameda/blob/master/LICENSE
  */
-// Going sloppy because loader plugin execs may depend on non-strict execution.
-/*jslint sloppy: true, nomen: true, regexp: true */
-/*global document, navigator, importScripts, Promise, setTimeout */
 
-import { TopReq, Config, Req, Handlers } from "./types";
+import { Config, Require, Handlers, Defer, DepMap } from "./types";
 import {
   commentReplace,
   hasProp,
@@ -14,51 +11,56 @@ import {
   obj,
   eachProp,
   mixin,
-  getGlobal,
+  makeShimExports,
   trimDots,
 } from "./utils";
 
-const GLOBAL = this;
+// const GLOBAL = globalThis;
 
 const UNDEFINED = undefined;
 
 const ASAP = Promise.resolve(undefined);
 
-var requirejs, require, define;
+const CURR_DIR_REG_EXP = /^\.\//;
 
-var topReq: TopReq,
-  bootstrapConfig: Config | undefined = requirejs || require,
-  contexts: Record<string, Req> = {},
-  queue: string[][] = [],
-  currDirRegExp = /^\.\//,
-  urlRegExp = /^\/|\:|\?|\.js$/,
-  commentRegExp = /\/\*[\s\S]*?\*\/|([^:"'=]|^)\/\/.*$/gm,
-  cjsRequireRegExp = /[^.]\s*require\s*\(\s*["']([^'"\s]+)["']\s*\)/g,
-  jsSuffixRegExp = /\.js$/;
+const URL_REG_EXP = /^\/|\:|\?|\.js$/;
 
-function newContext(contextName: string): TopReq {
-  var req: Req,
+const COMMENT_REG_EXP = /\/\*[\s\S]*?\*\/|([^:"'=]|^)\/\/.*$/gm;
+
+const CJS_REQUIRE_REG_EXP = /[^.]\s*require\s*\(\s*["']([^'"\s]+)["']\s*\)/g;
+
+const JS_SUFFIX_REG_EXP = /\.js$/;
+
+let requirejs: Require;
+
+const contexts: Record<string, Require> = {};
+
+const queue: string[][] = [];
+
+function newContext(contextName: string): Require {
+  const config: Partial<Config> = {
+    // Defaults. Do not set a default for map
+    // config to speed up normalize(), which
+    // will run faster if there is no default.
+    waitSeconds: 7,
+    baseUrl: "./",
+    paths: {},
+    bundles: {},
+    pkgs: {},
+    shim: {},
+    config: {},
+  };
+
+  var newRequire: Require,
     main: (...args: any[]) => any,
     makeMap: (...args: any[]) => any,
     callDep,
     handlers: Handlers,
     checkingLater,
     load,
-    context: TopReq,
+    context: Require,
     defined: Record<string, any> = obj(),
     waiting: Record<string, any> = obj(),
-    config: Config = {
-      // Defaults. Do not set a default for map
-      // config to speed up normalize(), which
-      // will run faster if there is no default.
-      waitSeconds: 7,
-      baseUrl: "./",
-      paths: {},
-      bundles: {},
-      pkgs: {},
-      shim: {},
-      config: {},
-    },
     mapCache = obj(),
     requireDeferreds = [],
     deferreds: Record<string, any> = obj(),
@@ -114,8 +116,8 @@ function newContext(contextName: string): TopReq {
       // of IDs. Have to do this here, and not in nameToUrl
       // because node allows either .js or non .js to map
       // to same file.
-      if (config.nodeIdCompat && jsSuffixRegExp.test(name[lastIndex])) {
-        name[lastIndex] = name[lastIndex].replace(jsSuffixRegExp, "");
+      if (config.nodeIdCompat && JS_SUFFIX_REG_EXP.test(name[lastIndex])) {
+        name[lastIndex] = name[lastIndex].replace(JS_SUFFIX_REG_EXP, "");
       }
 
       // Starts with a '.' so need the baseName
@@ -189,19 +191,10 @@ function newContext(contextName: string): TopReq {
     return pkgMain ? pkgMain : name;
   }
 
-  function makeShimExports(value: { init: () => any; exports: string }) {
-    function fn() {
-      var ret;
-      if (value.init) {
-        ret = value.init.apply(GLOBAL, arguments as any);
-      }
-      return ret || (value.exports && getGlobal(value.exports));
-    }
-    return fn;
-  }
-
   function takeQueue(anonId?: string) {
-    var i, id, args, shim;
+    var id, args, shim;
+
+    let i;
     for (i = 0; i < queue.length; i += 1) {
       // Peek to see if anon
       if (typeof queue[i][0] !== "string") {
@@ -213,8 +206,8 @@ function newContext(contextName: string): TopReq {
           break;
         }
       }
-      args = queue.shift();
 
+      args = queue.shift();
       if (args === undefined) throw new Error("unreachable");
 
       id = args[0];
@@ -237,8 +230,8 @@ function newContext(contextName: string): TopReq {
     }
   }
 
-  function makeRequire(relName: string | null, topLevel?: TopReq) {
-    var req: Req = function (
+  function makeRequire(relName: string | null, topLevel?: boolean) {
+    var req: Require = function (
       deps: string | string[] | null | undefined,
       callback,
       errback,
@@ -329,7 +322,7 @@ function newContext(contextName: string): TopReq {
       // arg (i.e. ?) or ends with .js, then assume the user meant to use an
       // url and not a module id. The slash is important for protocol-less
       // URLs as well as full paths.
-      if (urlRegExp.test(moduleName)) {
+      if (URL_REG_EXP.test(moduleName)) {
         // Just a plain path, not module name lookup, so just return it.
         // Add extension if it is included. This is a bit wonky, only non-.js
         // things pass an extension, this method probably needs to be
@@ -405,7 +398,7 @@ function newContext(contextName: string): TopReq {
     return req;
   }
 
-  function resolve(name, d, value) {
+  function resolve(name: string, d: Defer, value: any) {
     if (name) {
       defined[name] = value;
       if (requirejs.onResourceLoad) {
@@ -416,7 +409,7 @@ function newContext(contextName: string): TopReq {
     d.resolve(value);
   }
 
-  function reject(d, err) {
+  function reject(d: Defer, err: Error) {
     d.finished = true;
     d.rejected = true;
     d.reject(err);
@@ -428,7 +421,7 @@ function newContext(contextName: string): TopReq {
     };
   }
 
-  function defineModule(d) {
+  function defineModule(d: Defer) {
     d.factoryCalled = true;
 
     var ret,
@@ -436,8 +429,8 @@ function newContext(contextName: string): TopReq {
 
     try {
       ret = context.execCb(name, d.factory, d.values, defined[name]);
-    } catch (err) {
-      return reject(d, err);
+    } catch (err: unknown) {
+      return reject(d, err as Error);
     }
 
     if (name) {
@@ -462,7 +455,7 @@ function newContext(contextName: string): TopReq {
 
   // This method is attached to every module deferred,
   // so the "this" in here is the module deferred object.
-  function depFinished(val, i) {
+  function depFinished(val: any, i: number) {
     if (!this.rejected && !this.depDefined[i]) {
       this.depDefined[i] = true;
       this.depCount += 1;
@@ -473,8 +466,9 @@ function newContext(contextName: string): TopReq {
     }
   }
 
-  function makeDefer(name, calculatedMap) {
-    var d = {};
+  function makeDefer(name?: string, calculatedMap?) {
+    const d: Defer = {} as any;
+
     d.promise = new Promise(function (resolve, reject) {
       d.resolve = resolve;
       d.reject = function (err) {
@@ -490,17 +484,20 @@ function newContext(contextName: string): TopReq {
     d.values = [];
     d.depDefined = [];
     d.depFinished = depFinished;
+
     if (d.map.pr) {
       // Plugin resource ID, implicitly
       // depends on plugin. Track it in deps
       // so cycle breaking can work
       d.deps = [makeMap(d.map.pr)];
     }
+
     return d;
   }
 
-  function getDefer(name: string, calculatedMap?) {
-    var d;
+  function getDefer(name?: string, calculatedMap?: DepMap) {
+    let d: Defer;
+
     if (name) {
       d = name in deferreds && deferreds[name];
       if (!d) {
@@ -513,8 +510,8 @@ function newContext(contextName: string): TopReq {
     return d;
   }
 
-  function makeErrback(d, name) {
-    return function (err) {
+  function makeErrback(d: Defer, name: string) {
+    return function (err: Error) {
       if (!d.rejected) {
         if (!err.dynaId) {
           err.dynaId = "id" + (errCount += 1);
@@ -525,7 +522,7 @@ function newContext(contextName: string): TopReq {
     };
   }
 
-  function waitForDep(depMap, relName, d, i) {
+  function waitForDep(depMap, relName, d: Defer, i) {
     d.depMax += 1;
 
     // Do the fail at the end to catch errors
@@ -537,7 +534,7 @@ function newContext(contextName: string): TopReq {
       .catch(makeErrback(d, d.map.id));
   }
 
-  function makeLoad(id) {
+  function makeLoad(id: string) {
     var fromTextCalled;
     function load(value) {
       // Protect against older plugins that call load after
@@ -551,7 +548,7 @@ function newContext(contextName: string): TopReq {
       reject(getDefer(id), err);
     };
 
-    load.fromText = function (text: string, textAlt) {
+    load.fromText = function (text: string, textAlt?: string) {
       /*jslint evil: true */
       var d = getDefer(id),
         map = makeMap(makeMap(id).n),
@@ -580,7 +577,7 @@ function newContext(contextName: string): TopReq {
       }
 
       try {
-        req.exec(text);
+        newRequire.exec(text);
       } catch (e) {
         execError = new Error("fromText eval for " + plainId + " failed: " + e);
         execError.requireType = "fromtexteval";
@@ -659,7 +656,7 @@ function newContext(contextName: string): TopReq {
                 d.map = makeMap(id);
                 // mapCache will have returned previous map value, update the
                 // url, which will also update mapCache value.
-                d.map.url = req.nameToUrl(id);
+                d.map.url = newRequire.nameToUrl(id);
                 load(d.map);
               } else {
                 err = new Error("Load failed: " + id + ": " + script.src);
@@ -708,7 +705,7 @@ function newContext(contextName: string): TopReq {
         // If a bundles config, then just load that file instead to
         // resolve the plugin, as it is built into that bundle.
         if ((bundleId = getOwn(bundlesMap, name))) {
-          map.url = req.nameToUrl(bundleId);
+          map.url = newRequire.nameToUrl(bundleId);
           load(map);
         } else {
           return callDep(makeMap(map.pr)).then(function (plugin) {
@@ -722,7 +719,7 @@ function newContext(contextName: string): TopReq {
             if (!(newId in calledPlugin)) {
               calledPlugin[newId] = true;
               if (shim && shim.deps) {
-                req(shim.deps, function () {
+                newRequire(shim.deps, function () {
                   callPlugin(plugin, newMap, relName);
                 });
               } else {
@@ -733,7 +730,7 @@ function newContext(contextName: string): TopReq {
           });
         }
       } else if (shim && shim.deps) {
-        req(shim.deps, function () {
+        newRequire(shim.deps, function () {
           load(map);
         });
       } else {
@@ -810,7 +807,7 @@ function newContext(contextName: string): TopReq {
       prefix = parts[0];
       name = parts[1]!;
 
-      url = req.nameToUrl(name);
+      url = newRequire.nameToUrl(name);
     }
 
     // Using ridiculous property names for space reasons
@@ -853,14 +850,18 @@ function newContext(contextName: string): TopReq {
     },
   };
 
-  function breakCycle(d, traced, processed) {
+  function breakCycle(
+    d: Defer,
+    traced: Record<string, boolean>,
+    processed: Record<string, boolean>
+  ) {
     var id = d.map.id;
 
     traced[id] = true;
     if (!d.finished && d.deps) {
       d.deps.forEach(function (depMap) {
-        var depId = depMap.id,
-          dep = !hasProp(handlers, depId) && getDefer(depId, depMap);
+        const depId = depMap.id;
+        const dep = !hasProp(handlers, depId) && getDefer(depId, depMap);
 
         // Only force things that have not completed
         // being defined, so still in the registry,
@@ -868,6 +869,8 @@ function newContext(contextName: string): TopReq {
         // in the module already.
         if (dep && !dep.finished && !processed[depId]) {
           if (hasProp(traced, depId)) {
+            if (d.deps === undefined) throw new Error("unreachable");
+
             d.deps.forEach(function (depMap, i) {
               if (depMap.id === depId) {
                 d.depFinished(defined[depId], i);
@@ -882,12 +885,12 @@ function newContext(contextName: string): TopReq {
     processed[id] = true;
   }
 
-  function check(d) {
+  function check(d: Defer) {
     var err,
       mid,
       dfd,
       notFinished = [],
-      waitInterval = config.waitSeconds * 1000,
+      waitInterval = config.waitSeconds! * 1000,
       // It is possible to disable the wait interval by using waitSeconds 0.
       expired = waitInterval && startTime + waitInterval < new Date().getTime();
 
@@ -943,11 +946,11 @@ function newContext(contextName: string): TopReq {
   }
 
   // Used to break out of the promise try/catch chains.
-  function delayedError(e) {
+  function delayedError(e: Error) {
     setTimeout(function () {
       if (!e.dynaId || !trackedErrors[e.dynaId]) {
         trackedErrors[e.dynaId] = true;
-        req.onError(e);
+        newRequire.onError(e);
       }
     });
     return e;
@@ -1010,8 +1013,8 @@ function newContext(contextName: string): TopReq {
         // but only if there are function args.
         factory
           .toString()
-          .replace(commentRegExp, commentReplace)
-          .replace(cjsRequireRegExp, function (match: string, dep: string) {
+          .replace(COMMENT_REG_EXP, commentReplace)
+          .replace(CJS_REQUIRE_REG_EXP, function (match: string, dep: string) {
             if (deps === null) throw new Error("unreachable");
 
             deps.push(dep);
@@ -1033,6 +1036,8 @@ function newContext(contextName: string): TopReq {
 
       d.depending = true;
       deps.forEach(function (depName: string, i: number) {
+        if (deps === null) throw new Error("unreachable");
+
         var depMap;
         deps[i] = depMap = makeMap(depName, relName, true);
         depName = depMap.id;
@@ -1075,17 +1080,18 @@ function newContext(contextName: string): TopReq {
     return d.promise;
   };
 
-  req = makeRequire(null, true);
+  newRequire = makeRequire(null, true);
 
   /*
    * Just drops the config on the floor, but returns req in case
    * the config return value is used.
    */
-  req.config = function (cfg) {
+  newRequire.config = function (cfg: Config) {
     if (cfg.context && cfg.context !== contextName) {
-      var existingContext = getOwn(contexts, cfg.context);
+      var existingContext = getOwn<Require>(contexts, cfg.context);
       if (existingContext) {
-        return existingContext.req.config(cfg);
+        // ! NOTE(000alen): I'm not sure if `.req` is a valid property; could this be a bug?
+        return (existingContext as any).req.config(cfg) as Require;
       } else {
         return newContext(cfg.context).config(cfg);
       }
@@ -1180,8 +1186,8 @@ function newContext(contextName: string): TopReq {
           pkgObj.name +
           "/" +
           (pkgObj.main || "main")
-            .replace(currDirRegExp, "")
-            .replace(jsSuffixRegExp, "");
+            .replace(CURR_DIR_REG_EXP, "")
+            .replace(JS_SUFFIX_REG_EXP, "");
       });
     }
 
@@ -1189,38 +1195,40 @@ function newContext(contextName: string): TopReq {
     // require with those args. This is useful when require is defined as a
     // config object before require.js is loaded.
     if (cfg.deps || cfg.callback) {
-      req(cfg.deps, cfg.callback);
+      newRequire(cfg.deps, cfg.callback);
     }
 
-    return req;
+    return newRequire;
   };
 
-  req.onError = function (err) {
+  newRequire.onError = function (err) {
     throw err;
   };
 
   context = {
     id: contextName,
-    defined: defined,
-    waiting: waiting,
-    config: config,
-    deferreds: deferreds,
-    req: req,
-    execCb: function execCb(name, callback, args, exports) {
+    defined,
+    waiting,
+    config,
+    deferreds,
+    req: newRequire,
+    execCb: function execCb(
+      _name: string,
+      callback: (...args: any[]) => any,
+      args: any[],
+      exports: any
+    ) {
       return callback.apply(exports, args);
     },
   };
 
   contexts[contextName] = context;
 
-  return req;
+  return newRequire;
 }
 
-requirejs = topReq = newContext("_");
-
-if (typeof require !== "function") {
-  require = topReq;
-}
+const topRequire: Require = newContext("_");
+topRequire.contexts = contexts;
 
 /**
  * Executes the text. Normally just uses eval, but can be modified
@@ -1228,20 +1236,16 @@ if (typeof require !== "function") {
  * loader plugins, not for plain JS modules.
  * @param {String} text the text to execute/evaluate.
  */
-topReq.exec = function (text: string) {
+topRequire.exec = function (text: string) {
   /*jslint evil: true */
   return eval(text);
 };
 
-topReq.contexts = contexts;
+requirejs = topRequire;
 
-define = function () {
+export const require = topRequire;
+export const define = function () {
   // queue.push(slice.call(arguments, 0));
   queue.push([...arguments].slice(0));
 };
-
-if (bootstrapConfig) {
-  topReq.config(bootstrapConfig);
-}
-
 export default requirejs;

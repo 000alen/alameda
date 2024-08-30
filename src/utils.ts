@@ -114,3 +114,13 @@ export function trimDots(ary: string[]) {
   }
 }
 
+export function makeShimExports(value: { init: () => any; exports: string }) {
+  function fn() {
+    var ret;
+    if (value.init) {
+      ret = value.init.apply(GLOBAL, arguments as any);
+    }
+    return ret || (value.exports && getGlobal(value.exports));
+  }
+  return fn;
+}

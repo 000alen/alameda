@@ -284,7 +284,7 @@ function newContext(contextName: string): Require {
 
         if (topLevel) {
           // Could be a new context, so call returned require
-          return req.config(cfg)(deps, callback, errback);
+          return req.config!(cfg)(deps, callback, errback);
         }
       }
 
@@ -1062,13 +1062,15 @@ function newContext(contextName: string): Require {
 
       // Save info for use later.
       d.factory = factory;
+      // @ts-ignore
       d.deps = deps;
 
       d.depending = true;
       deps.forEach(function (depName: string, i: number) {
         if (deps === null) throw new Error("unreachable");
 
-        var depMap;
+        let depMap: DepMap;
+        // @ts-ignore
         deps[i] = depMap = makeMap(depName, relName, true);
         depName = depMap.id;
 
@@ -1116,7 +1118,7 @@ function newContext(contextName: string): Require {
    * Just drops the config on the floor, but returns req in case
    * the config return value is used.
    */
-  newRequire.config = function (cfg: Config) {
+  newRequire.config = function (cfg: Partial<Config>) {
     if (cfg.context && cfg.context !== contextName) {
       var existingContext = getOwn<Require>(contexts, cfg.context);
       if (existingContext) {
@@ -1156,20 +1158,20 @@ function newContext(contextName: string): Require {
       };
 
     eachProp(cfg, function (value, prop) {
-      if (objs[prop]) {
-        if (!config[prop]) {
-          config[prop] = {};
+      if (objs[prop as keyof typeof objs]) {
+        if (!config[prop as keyof typeof config]) {
+          (config as any)[prop] = {};
         }
-        mixin(config[prop], value, true, true);
+        mixin((config as any)[prop], value, true, true);
       } else {
-        config[prop] = value;
+        (config as any)[prop] = value;
       }
     });
 
     // Reverse map the bundles
     if (cfg.bundles) {
       eachProp(cfg.bundles, function (value, prop) {
-        value.forEach(function (v) {
+        (value as any[]).forEach(function (v) {
           if (v !== prop) {
             bundlesMap[v] = prop;
           }
@@ -1224,8 +1226,9 @@ function newContext(contextName: string): Require {
     // If a deps array or a config callback is specified, then call
     // require with those args. This is useful when require is defined as a
     // config object before require.js is loaded.
-    if (cfg.deps || cfg.callback) {
-      newRequire(cfg.deps, cfg.callback);
+    // if (cfg.deps || cfg.callback) {
+    if ("deps" in cfg || "callback" in cfg) {
+      newRequire((cfg as any).deps, (cfg as any).callback);
     }
 
     return newRequire;
@@ -1237,9 +1240,9 @@ function newContext(contextName: string): Require {
 
   context = {
     id: contextName,
-    defined,
+    defined: defined as any,
     waiting,
-    config,
+    config: config as any,
     deferreds,
     req: newRequire,
     execCb: function execCb(
@@ -1250,7 +1253,7 @@ function newContext(contextName: string): Require {
     ) {
       return callback.apply(exports, args);
     },
-  };
+  } as unknown as Require;
 
   contexts[contextName] = context;
 
@@ -1273,6 +1276,7 @@ topRequire.exec = function (text: string) {
 
 requirejs = topRequire;
 
+// @ts-ignore
 export const require = topRequire;
 export const define = function () {
   // queue.push(slice.call(arguments, 0));

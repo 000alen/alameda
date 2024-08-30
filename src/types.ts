@@ -5,7 +5,10 @@ export interface Config {
   baseUrl: string;
   paths: Record<string, string>;
   bundles: Record<string, string>;
+
   pkgs: Record<string, string>;
+  packages?: any[];
+
   shim: Record<string, any>;
   config: Record<string, any>;
 
@@ -92,7 +95,7 @@ export type Defer = {
 
   deps?: DepMap[];
 
-  factory?: any;
+  factory?: (p: any, val: any) => any;
   factoryCalled?: boolean;
 
   depending?: boolean;

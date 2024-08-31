@@ -1,6 +1,5 @@
 {
-  "name": "@000alen/alameda-monorepo",
-  "private": true,
+  "name": "@000alen/alameda",
   "description": "AMD loader, like requirejs, but with promises and for modern browsers",
   "version": "1.4.0",
   "homepage": "http://github.com/requirejs/alameda",
@@ -10,9 +9,9 @@
     "type": "git",
     "url": "https://github.com/requirejs/alameda.git"
   },
-  "workspaces": [
-    "packages/*",
-    "workspaces/*"
-  ],
-  "packageManager": "yarn@4.4.1"
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "devDependencies": {
+    "typescript": "^5.5.4"
+  }
 }

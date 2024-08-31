@@ -7,11 +7,11 @@ export type DefineFunction =
     ) => void)
   | ((name: string, factory: any) => void);
 
-export type RequireFunction = (
+export type RequireFunction = <T extends any[] = any[]>(
   dependencies: string | string[] | null | undefined,
-  callback?: (...args: any[]) => any,
+  callback?: (...args: T) => void,
   errback?: (error: Error) => void
-) => void;
+) => Promise<T>;
 
 export type Handlers = {
   require: (name: string) => any;

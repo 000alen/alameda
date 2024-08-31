@@ -1,7 +1,7 @@
 {
   "name": "@000alen/alameda",
   "description": "AMD loader, like requirejs, but with promises and for modern browsers",
-  "version": "1.4.1",
+  "version": "1.4.2",
   "homepage": "https://github.com/000alen/alameda",
   "author": "Alen Rubilar <lclc.alen@gmail.com> (https://github.com/000alen)",
   "license": "MIT",

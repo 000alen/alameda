@@ -1,3 +1,5 @@
+/// <amd-module name="lib"/>
+
 export const name = "lib";
 
 export function hello() {

@@ -1290,4 +1290,6 @@ export const define: DefineFunction = function () {
   queue.push([...arguments].slice(0));
 };
 
+export * from "./eval";
+
 export default requirejs;

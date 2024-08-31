@@ -2,16 +2,6 @@ import * as alameda from "@000alen/alameda";
 import fs from "fs";
 import path from "path";
 
-function safeEval(scope: Record<string, any>, code: string) {
-  const definitions = Object.keys(scope)
-    .map((key) => `var ${key} = this.${key}`)
-    .join(";");
-
-  const body = `"use strict";${definitions};${code}`;
-
-  return Function(body).bind(scope)();
-}
-
 async function main() {
   const payload = await fs.promises.readFile(
     path.resolve("../lib/dist/index.js"),
@@ -20,7 +10,7 @@ async function main() {
     }
   );
 
-  safeEval(
+  alameda.scopedEval(
     {
       define: alameda.define,
     },

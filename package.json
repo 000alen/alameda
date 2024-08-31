@@ -9,7 +9,8 @@
         "type": "git",
         "url": "https://github.com/requirejs/alameda.git"
     },
-    "main": "alameda.js",
+    "main": "dist/index.js",
+    "types": "dist/index.d.ts",
     "volo": {
         "url": "https://raw.github.com/requirejs/alameda/{version}/alameda.js"
     },

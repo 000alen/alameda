@@ -19,6 +19,7 @@ let requirejs;
 const contexts = {};
 const queue = [];
 function newContext(contextName) {
+    var newRequire;
     const config = {
         // Defaults. Do not set a default for map
         // config to speed up normalize(), which
@@ -35,8 +36,19 @@ function newContext(contextName) {
     const defined = (0, utils_1.obj)();
     const waiting = (0, utils_1.obj)();
     const deferreds = (0, utils_1.obj)();
+    const calledDefine = (0, utils_1.obj)();
+    const calledPlugin = (0, utils_1.obj)();
+    const trackedErrors = (0, utils_1.obj)();
+    const urlFetched = (0, utils_1.obj)();
+    const bundlesMap = (0, utils_1.obj)();
+    const asyncResolve = Promise.resolve();
+    let handlers;
+    let context;
     let checkingLater;
-    var newRequire, main, handlers, context, mapCache = (0, utils_1.obj)(), calledDefine = (0, utils_1.obj)(), calledPlugin = (0, utils_1.obj)(), loadCount = 0, startTime = new Date().getTime(), errCount = 0, trackedErrors = (0, utils_1.obj)(), urlFetched = (0, utils_1.obj)(), bundlesMap = (0, utils_1.obj)(), asyncResolve = Promise.resolve();
+    let loadCount = 0;
+    let errCount = 0;
+    let startTime = new Date().getTime();
+    let mapCache = (0, utils_1.obj)();
     /**
      * Given a relative module name, like ./something, normalize it to
      * a real name that can be mapped to a path.
@@ -293,45 +305,46 @@ function newContext(contextName) {
         };
         return req;
     }
-    function resolve(name, d, value) {
+    function resolve(name, defer, value) {
         if (name) {
             defined[name] = value;
             if (requirejs.onResourceLoad) {
-                requirejs.onResourceLoad(context, d.map, d.deps);
+                requirejs.onResourceLoad(context, defer.map, defer.deps);
             }
         }
-        d.finished = true;
-        d.resolve(value);
+        defer.finished = true;
+        defer.resolve(value);
     }
-    function reject(d, err) {
-        d.finished = true;
-        d.rejected = true;
-        d.reject(err);
+    function reject(defer, err) {
+        defer.finished = true;
+        defer.rejected = true;
+        defer.reject(err);
     }
     function makeNormalize(relName) {
         return function (name) {
             return normalize(name, relName, true);
         };
     }
-    function defineModule(d) {
-        d.factoryCalled = true;
-        var ret, name = d.map.id;
+    function defineModule(defer) {
+        defer.factoryCalled = true;
+        let returnValue;
+        const name = defer.map.id;
         try {
-            ret = context.execCb(name, d.factory, d.values, defined[name]);
+            returnValue = context.execCb(name, defer.factory, defer.values, defined[name]);
         }
         catch (err) {
-            return reject(d, err);
+            return reject(defer, err);
         }
         if (name) {
             // Favor return value over exports. If node/cjs in play,
             // then will not have a return value anyway. Favor
             // module.exports assignment over exports object.
-            if (ret === UNDEFINED) {
-                if (d.cjsModule) {
-                    ret = d.cjsModule.exports;
+            if (returnValue === UNDEFINED) {
+                if (defer.cjsModule) {
+                    returnValue = defer.cjsModule.exports;
                 }
-                else if (d.usingExports) {
-                    ret = defined[name];
+                else if (defer.usingExports) {
+                    returnValue = defined[name];
                 }
             }
         }
@@ -339,89 +352,89 @@ function newContext(contextName) {
             // Remove the require deferred from the list to
             // make cycle searching faster. Do not need to track
             // it anymore either.
-            requireDeferreds.splice(requireDeferreds.indexOf(d), 1);
+            requireDeferreds.splice(requireDeferreds.indexOf(defer), 1);
         }
-        resolve(name, d, ret);
+        resolve(name, defer, returnValue);
     }
     function makeDefer(name, calculatedMap) {
-        const d = {};
-        d.promise = new Promise(function (resolve, reject) {
-            d.resolve = resolve;
-            d.reject = function (err) {
+        const defer = {};
+        defer.promise = new Promise(function (resolve, reject) {
+            defer.resolve = resolve;
+            defer.reject = function (err) {
                 if (!name) {
-                    requireDeferreds.splice(requireDeferreds.indexOf(d), 1);
+                    requireDeferreds.splice(requireDeferreds.indexOf(defer), 1);
                 }
                 reject(err);
             };
         });
         // d.map = name ? calculatedMap || makeMap(name) : {};
         if (name)
-            d.map = calculatedMap || makeMap(name);
+            defer.map = calculatedMap || makeMap(name);
         else
-            d.map = {};
-        d.depCount = 0;
-        d.depMax = 0;
-        d.values = [];
-        d.depDefined = [];
+            defer.map = {};
+        defer.depCount = 0;
+        defer.depMax = 0;
+        defer.values = [];
+        defer.depDefined = [];
         // d.depFinished = depFinished;
         // This method is attached to every module deferred,
         // so the "this" in here is the module deferred object.
-        d.depFinished = function depFinished(val, i) {
+        defer.depFinished = function depFinished(value, i) {
             if (!this.rejected && !this.depDefined[i]) {
                 this.depDefined[i] = true;
                 this.depCount += 1;
-                this.values[i] = val;
+                this.values[i] = value;
                 if (!this.depending && this.depCount === this.depMax) {
                     defineModule(this);
                 }
             }
         };
-        if (d.map.pr) {
+        if (defer.map.pr) {
             // Plugin resource ID, implicitly
             // depends on plugin. Track it in deps
             // so cycle breaking can work
-            d.deps = [makeMap(d.map.pr)];
+            defer.deps = [makeMap(defer.map.pr)];
         }
-        return d;
+        return defer;
     }
     function getDefer(name, calculatedMap) {
-        let d;
+        let defer;
         if (name) {
             // d = name in deferreds && deferreds[name];
             // if (!d) {
             //   d = deferreds[name] = makeDefer(name, calculatedMap);
             // }
             if (name in deferreds)
-                d = deferreds[name];
+                defer = deferreds[name];
             else
-                d = deferreds[name] = makeDefer(name, calculatedMap);
+                defer = deferreds[name] = makeDefer(name, calculatedMap);
         }
         else {
-            d = makeDefer();
-            requireDeferreds.push(d);
+            defer = makeDefer();
+            requireDeferreds.push(defer);
         }
-        return d;
+        return defer;
     }
-    function makeErrback(d, name) {
-        return function (err) {
-            if (!d.rejected) {
-                if (!err.dynaId) {
-                    err.dynaId = "id" + (errCount += 1);
-                    err.requireModules = [name];
+    function makeErrback(defer, name) {
+        return function (error) {
+            if (!defer.rejected) {
+                if (!error.dynaId) {
+                    error.dynaId = "id" + (errCount += 1);
+                    error.requireModules = [name];
                 }
-                reject(d, err);
+                reject(defer, error);
             }
         };
     }
-    function waitForDep(depMap, relName, d, i) {
-        d.depMax += 1;
+    function waitForDep(depMap, relName, defer, i) {
+        defer.depMax += 1;
         // Do the fail at the end to catch errors
         // in the then callback execution.
         callDep(depMap, relName)
             .then(function (val) {
-            d.depFinished(val, i);
-        }, makeErrback(d, depMap.id))
-            .catch(makeErrback(d, d.map.id));
+            defer.depFinished(val, i);
+        }, makeErrback(defer, depMap.id))
+            .catch(makeErrback(defer, defer.map.id));
     }
     function makeLoad(id) {
         let fromTextCalled;
@@ -432,8 +445,8 @@ function newContext(contextName) {
                 resolve(id, getDefer(id), value);
             }
         }
-        load.error = function (err) {
-            reject(getDefer(id), err);
+        load.error = function (error) {
+            reject(getDefer(id), error);
         };
         load.fromText = function (text, textAlt) {
             /*jslint evil: true */
@@ -503,7 +516,7 @@ function newContext(contextName) {
             }, false);
             script.addEventListener("error", function () {
                 loadCount -= 1;
-                var err, pathConfig = (0, utils_1.getOwn)(config.paths, id);
+                var error, pathConfig = (0, utils_1.getOwn)(config.paths, id);
                 if (pathConfig &&
                     Array.isArray(pathConfig) &&
                     pathConfig.length > 1) {
@@ -511,7 +524,7 @@ function newContext(contextName) {
                     // Pop off the first array value, since it failed, and
                     // retry
                     pathConfig.shift();
-                    var d = getDefer(id);
+                    const d = getDefer(id);
                     d.map = makeMap(id);
                     // mapCache will have returned previous map value, update the
                     // url, which will also update mapCache value.
@@ -519,10 +532,10 @@ function newContext(contextName) {
                     load(d.map);
                 }
                 else {
-                    err = new types_1.AlamedaError("Load failed: " + id + ": " + script.src);
-                    err.requireModules = [id];
-                    err.requireType = "scripterror";
-                    reject(getDefer(id), err);
+                    error = new types_1.AlamedaError("Load failed: " + id + ": " + script.src);
+                    error.requireModules = [id];
+                    error.requireType = "scripterror";
+                    reject(getDefer(id), error);
                 }
             }, false);
             script.src = url;
@@ -546,7 +559,9 @@ function newContext(contextName) {
         plugin.load(map.n, makeRequire(relName), makeLoad(map.id), config);
     }
     function callDep(map, relName) {
-        var args, bundleId, name = map.id, shim = config.shim[name];
+        let args, bundleId;
+        const name = map.id;
+        const shim = config.shim[name];
         if (name in waiting) {
             args = waiting[name];
             delete waiting[name];
@@ -563,7 +578,9 @@ function newContext(contextName) {
                 else {
                     return callDep(makeMap(map.pr)).then(function (plugin) {
                         // Redo map now that plugin is known to be loaded
-                        var newMap = map.prn ? map : makeMap(name, relName, true), newId = newMap.id, shim = (0, utils_1.getOwn)(config.shim, newId);
+                        const newMap = map.prn ? map : makeMap(name, relName, true);
+                        const newId = newMap.id;
+                        const shim = (0, utils_1.getOwn)(config.shim, newId);
                         // Make sure to only call load once per resource. Many
                         // calls could have been queued waiting for plugin to load.
                         if (!(newId in calledPlugin)) {
@@ -596,7 +613,8 @@ function newContext(contextName) {
     // with the plugin being undefined if the name
     // did not have a plugin prefix.
     function splitPrefix(name) {
-        var prefix, index = name ? name.indexOf("!") : -1;
+        let prefix;
+        const index = name ? name.indexOf("!") : -1;
         if (index > -1) {
             prefix = name.substring(0, index);
             name = name.substring(index + 1, name.length);
@@ -686,11 +704,11 @@ function newContext(contextName) {
             };
         },
     };
-    function breakCycle(d, traced, processed) {
-        var id = d.map.id;
+    function breakCycle(defer, traced, processed) {
+        var id = defer.map.id;
         traced[id] = true;
-        if (!d.finished && d.deps) {
-            d.deps.forEach(function (depMap) {
+        if (!defer.finished && defer.deps) {
+            defer.deps.forEach(function (depMap) {
                 const depId = depMap.id;
                 const dep = !(0, utils_1.hasProp)(handlers, depId) && getDefer(depId, depMap);
                 // Only force things that have not completed
@@ -699,11 +717,11 @@ function newContext(contextName) {
                 // in the module already.
                 if (dep && !dep.finished && !processed[depId]) {
                     if ((0, utils_1.hasProp)(traced, depId)) {
-                        if (d.deps === undefined)
+                        if (defer.deps === undefined)
                             throw new Error("unreachable");
-                        d.deps.forEach(function (depMap, i) {
+                        defer.deps.forEach(function (depMap, i) {
                             if (depMap.id === depId) {
-                                d.depFinished(defined[depId], i);
+                                defer.depFinished(defined[depId], i);
                             }
                         });
                     }
@@ -747,11 +765,11 @@ function newContext(contextName) {
                     notFinished.push(dfd.map.id);
                 }
             }
-            const err = new types_1.AlamedaError("Timeout for modules: " + notFinished);
-            err.requireModules = notFinished;
-            err.requireType = "timeout";
+            const error = new types_1.AlamedaError("Timeout for modules: " + notFinished);
+            error.requireModules = notFinished;
+            error.requireType = "timeout";
             notFinished.forEach(function (id) {
-                reject(getDefer(id), err);
+                reject(getDefer(id), error);
             });
         }
         else if (loadCount || requireDeferreds.length) {
@@ -783,7 +801,7 @@ function newContext(contextName) {
         });
         return e;
     }
-    main = function (name, deps, factory, errback, relName) {
+    function main(name, deps, factory, errback, relName) {
         if (name) {
             // Only allow main calling once per module.
             if (name in calledDefine) {
@@ -833,6 +851,7 @@ function newContext(contextName) {
                     if (deps === null)
                         throw new Error("unreachable");
                     deps.push(dep);
+                    return "";
                 });
                 // May be a CommonJS thing even without require calls, but still
                 // could use exports, and module. Avoid doing exports and module
@@ -890,7 +909,7 @@ function newContext(contextName) {
             check(d);
         }
         return d.promise;
-    };
+    }
     newRequire = makeRequire(undefined, true);
     /*
      * Just drops the config on the floor, but returns req in case
@@ -900,7 +919,6 @@ function newContext(contextName) {
         if (cfg.context && cfg.context !== contextName) {
             var existingContext = (0, utils_1.getOwn)(contexts, cfg.context);
             if (existingContext) {
-                // ! NOTE(000alen): I'm not sure if `.req` is a valid property; could this be a bug?
                 return existingContext.req.config(cfg);
             }
             else {
@@ -999,14 +1017,14 @@ function newContext(contextName) {
         }
         return newRequire;
     };
-    newRequire.onError = function (err) {
-        throw err;
+    newRequire.onError = function (error) {
+        throw error;
     };
     context = {
         id: contextName,
-        defined: defined,
+        defined,
         waiting,
-        config: config,
+        config,
         deferreds,
         req: newRequire,
         execCb: function execCb(_name, callback, args, exports) {

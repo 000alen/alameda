@@ -47,12 +47,22 @@ export type Require = CallableFunction & {
   exec(text: string): any;
   onError(err: Error): void;
 
-  contexts?: Record<string, Require>;
+  contexts?: Record<string, Context>;
 
   // config: Config;
   config: (config: Partial<Config>) => Require;
 
-  onResourceLoad?: (context: Require, map: any, deps: any) => any;
+  onResourceLoad?: (context: Context, map: any, deps: any) => any;
+  execCb: (name: string, factory: any, values: any, defined: any) => any;
+};
+
+export type Context = {
+  id: string;
+  defined: Record<string, any>;
+  waiting: Record<string, any[]>;
+  config: Config;
+  deferreds: Record<string, Defer>;
+  req: Require;
   execCb: (name: string, factory: any, values: any, defined: any) => any;
 };
 

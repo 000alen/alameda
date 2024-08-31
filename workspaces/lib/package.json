@@ -1,6 +1,7 @@
 {
   "name": "lib",
   "version": "1.0.0",
+  "private": true,
   "main": "dist/lib.js",
   "types": "dist/lib.d.ts",
   "license": "MIT",

@@ -6,3 +6,4 @@ testBaseUrl.js
 tests-requirejs
 node_modules
 dist
+.yarn

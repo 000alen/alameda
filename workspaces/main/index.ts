@@ -2,12 +2,12 @@ import * as alameda from "@000alen/alameda";
 import fs from "fs";
 import path from "path";
 
-function safeEval(scope: Record<string, any>, script: string) {
+function safeEval(scope: Record<string, any>, code: string) {
   const definitions = Object.keys(scope)
     .map((key) => `var ${key} = this.${key}`)
     .join(";");
 
-  const body = `"use strict";${definitions};${script}`;
+  const body = `"use strict";${definitions};${code}`;
 
   return Function(body).bind(scope)();
 }

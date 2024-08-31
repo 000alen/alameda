@@ -13,6 +13,7 @@ import {
   Load,
   AlamedaError,
   Context,
+  DefineFunction,
 } from "./types";
 import {
   commentReplace,
@@ -1283,8 +1284,10 @@ requirejs = topRequire;
 
 // @ts-ignore
 export const require = topRequire;
-export const define = function () {
+
+export const define: DefineFunction = function () {
   // queue.push(slice.call(arguments, 0));
   queue.push([...arguments].slice(0));
 };
+
 export default requirejs;

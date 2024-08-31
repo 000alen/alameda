@@ -1,36 +1,17 @@
-export interface Config {
-  context?: string;
+export type DefineFunction =
+  | ((dependencies: string[], factory: (...args: any[]) => any) => void)
+  | ((
+      name: string,
+      dependencies: string[],
+      factory: (...args: any[]) => any
+    ) => void)
+  | ((name: string, factory: any) => void);
 
-  waitSeconds: number;
-  baseUrl: string;
-  paths: Record<string, string>;
-  bundles: Record<string, string>;
-
-  pkgs: Record<string, string>;
-  packages?: any[];
-
-  shim: Record<string, any>;
-  config: Record<string, any>;
-
-  map?: Record<string, any>;
-
-  nodeIdCompat?: boolean;
-
-  urlArgs?: (moduleName: string, url: string) => string;
-
-  scriptType?: string;
-
-  onNodeCreated?: (
-    script: HTMLScriptElement,
-    config: Config,
-    id: string,
-    url: string
-  ) => void;
-
-  defaultErrback?: (err: Error) => void;
-
-  skipDataMain?: boolean;
-}
+export type RequireFunction = (
+  dependencies: string | string[] | null | undefined,
+  callback?: (...args: any[]) => any,
+  errback?: (error: Error) => void
+) => void;
 
 export type Handlers = {
   require: (name: string) => any;
@@ -38,7 +19,7 @@ export type Handlers = {
   module: (name: string, url: string) => any;
 } & Record<string, any>;
 
-export type Require = CallableFunction & {
+export type Require = RequireFunction & {
   isBrowser: boolean;
   nameToUrl: (moduleName: string, ext?: string, skipExt?: boolean) => string;
   toUrl: (moduleNamePlusExt: string) => string;
@@ -70,14 +51,6 @@ export type Load = ((value: any) => void) & {
   error: (err: Error) => void;
   fromText: (text: string, textAlt?: string) => void;
 };
-
-type Main =
-  | ((
-      name: string,
-      dependencies: string[],
-      factory: (...args: any[]) => any
-    ) => void)
-  | ((name: string, factory: any) => void);
 
 export type DepMap = {
   id: string;
@@ -114,6 +87,40 @@ export type Defer = {
 
   cjsModule?: any;
 };
+
+export interface Config {
+  context?: string;
+
+  waitSeconds: number;
+  baseUrl: string;
+  paths: Record<string, string>;
+  bundles: Record<string, string>;
+
+  pkgs: Record<string, string>;
+  packages?: any[];
+
+  shim: Record<string, any>;
+  config: Record<string, any>;
+
+  map?: Record<string, any>;
+
+  nodeIdCompat?: boolean;
+
+  urlArgs?: (moduleName: string, url: string) => string;
+
+  scriptType?: string;
+
+  onNodeCreated?: (
+    script: HTMLScriptElement,
+    config: Config,
+    id: string,
+    url: string
+  ) => void;
+
+  defaultErrback?: (err: Error) => void;
+
+  skipDataMain?: boolean;
+}
 
 export interface Plugin {
   load: (n: any, require: Require, load: Load, config: Config) => any;

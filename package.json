@@ -3,12 +3,12 @@
   "private": true,
   "description": "AMD loader, like requirejs, but with promises and for modern browsers",
   "version": "1.4.0",
-  "homepage": "http://github.com/requirejs/alameda",
-  "author": "James Burke <jrburke@gmail.com> (http://github.com/jrburke)",
+  "homepage": "https://github.com/000alen/alameda",
+  "author": "Alen Rubilar <lclc.alen@gmail.com> (https://github.com/000alen)",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/requirejs/alameda.git"
+    "url": "https://github.com/000alen/alameda.git"
   },
   "workspaces": [
     "packages/*",
